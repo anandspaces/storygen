@@ -5,15 +5,10 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "6060:6060"
     env_file:
       - .env
     restart: unless-stopped
     volumes:
       # Optional: persist sqlite DB if you use one
       - ./data:/app/data
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', r => process.exit(r.statusCode === 200 ? 0 : 1))"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
