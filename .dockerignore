@@ -1,0 +1,28 @@
+# Node
+node_modules
+npm-debug.log
+yarn.lock
+pnpm-lock.yaml
+
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+
+# Logs
+logs
+*.log
+
+# OS / Editor
+.DS_Store
+.vscode
+.idea
+
+# Build artifacts
+dist
+build
+coverage
