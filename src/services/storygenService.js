@@ -35,6 +35,7 @@ db.exec(`
     topic TEXT,
     subject TEXT,
     video_url TEXT NOT NULL,
+    status TEXT DEFAULT 'completed',
     created_at TEXT NOT NULL,
     last_accessed TEXT NOT NULL,
     access_count INTEGER DEFAULT 1
@@ -46,6 +47,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_storygen_lookup 
   ON storygen_cache(chapter_id, topic_id, subject_id, level);
 `);
+
+// In-memory lock to prevent duplicate generations
+const generationLocks = new Map();
 
 // Educational video style
 const EDUCATIONAL_STYLE = "Educational style, clear and engaging visuals, professional lighting, warm colors, 16:9 composition, informative and approachable, suitable for students";
@@ -59,7 +63,51 @@ const generateCacheKey = (chapterId, topicId, subjectId, level) => {
 };
 
 /**
- * Check if a video already exists in cache
+ * Check if a video already exists in cache (READ-ONLY, no updates)
+ */
+exports.checkCacheExists = (chapterId, topicId, subjectId, level) => {
+  const row = db.prepare(`
+    SELECT * FROM storygen_cache 
+    WHERE chapter_id = ? AND topic_id = ? AND subject_id = ? AND level = ?
+  `).get(chapterId, topicId, subjectId, level);
+
+  if (row) {
+    return {
+      exists: true,
+      status: row.status || 'completed',
+      id: row.id,
+      chapterId: row.chapter_id,
+      topicId: row.topic_id,
+      subjectId: row.subject_id,
+      level: row.level,
+      chapter: row.chapter,
+      topic: row.topic,
+      subject: row.subject,
+      videoUrl: row.video_url,
+      createdAt: row.created_at,
+      lastAccessed: row.last_accessed,
+      accessCount: row.access_count,
+    };
+  }
+
+  // Check if generation is in progress (in-memory lock)
+  const cacheKey = generateCacheKey(chapterId, topicId, subjectId, level);
+  if (generationLocks.has(cacheKey)) {
+    return {
+      exists: false,
+      status: 'processing',
+      message: 'Video generation in progress'
+    };
+  }
+
+  return {
+    exists: false,
+    status: 'not_found'
+  };
+};
+
+/**
+ * Check if a video already exists in cache (with access count update)
  */
 exports.getCachedVideo = (chapterId, topicId, subjectId, level) => {
   const row = db.prepare(`
@@ -95,6 +143,32 @@ exports.getCachedVideo = (chapterId, topicId, subjectId, level) => {
 };
 
 /**
+ * Check if generation is already in progress
+ */
+const isGenerationInProgress = (chapterId, topicId, subjectId, level) => {
+  const cacheKey = generateCacheKey(chapterId, topicId, subjectId, level);
+  return generationLocks.has(cacheKey);
+};
+
+/**
+ * Wait for ongoing generation to complete
+ */
+const waitForGeneration = async (chapterId, topicId, subjectId, level, maxWaitMs = 600000) => {
+  const cacheKey = generateCacheKey(chapterId, topicId, subjectId, level);
+  const startTime = Date.now();
+  
+  while (generationLocks.has(cacheKey)) {
+    if (Date.now() - startTime > maxWaitMs) {
+      throw new Error('Timeout waiting for video generation to complete');
+    }
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Check every 2 seconds
+  }
+  
+  // After waiting, try to get from cache
+  return exports.getCachedVideo(chapterId, topicId, subjectId, level);
+};
+
+/**
  * Save a newly generated video to cache
  */
 exports.saveCachedVideo = (params) => {
@@ -115,9 +189,9 @@ exports.saveCachedVideo = (params) => {
   db.prepare(`
     INSERT INTO storygen_cache (
       id, chapter_id, topic_id, subject_id, level, 
-      chapter, topic, subject, video_url, 
+      chapter, topic, subject, video_url, status,
       created_at, last_accessed
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     chapterId,
@@ -128,9 +202,13 @@ exports.saveCachedVideo = (params) => {
     topic,
     subject,
     videoUrl,
+    'completed',
     now,
     now
   );
+
+  // Release the lock
+  generationLocks.delete(id);
 
   return {
     id,
@@ -168,6 +246,7 @@ exports.getAllCachedVideos = () => {
     topic: row.topic,
     subject: row.subject,
     videoUrl: row.video_url,
+    status: row.status || 'completed',
     createdAt: row.created_at,
     lastAccessed: row.last_accessed,
     accessCount: row.access_count,
@@ -186,6 +265,7 @@ exports.deleteCachedVideo = (id) => {
  */
 exports.clearCache = () => {
   db.prepare('DELETE FROM storygen_cache').run();
+  generationLocks.clear();
 };
 
 /**
@@ -628,27 +708,60 @@ const generateVideoWithVertex = async (storyboardWithImages) => {
     console.warn('Failed to delete concat list file:', e);
   }
 
-  const videoUrl = `http://localhost:${process.env.PORT || 3005}/videos/${outputName}`;
+  const videoUrl = `http://localhost:${process.env.PORT || 6060}/videos/${outputName}`;
   log('educational_video_complete', { videoUrl });
   
   return videoUrl;
 };
 
 /**
- * Main function: Generate complete educational video
+ * Main function: Generate complete educational video with locking
  */
-exports.generateEducationalVideo = async ({ chapter, topic, subject, level }) => {
-  log('educational_video_generation_start', { chapter, topic, subject, level });
+exports.generateEducationalVideo = async ({ chapter, topic, subject, level, chapterId, topicId, subjectId }) => {
+  const cacheKey = generateCacheKey(chapterId, topicId, subjectId, level);
+  
+  // Check if generation is already in progress
+  if (generationLocks.has(cacheKey)) {
+    log('generation_already_in_progress', { chapterId, topicId });
+    throw new Error('Video generation already in progress for this topic. Please wait or try again later.');
+  }
+  
+  // Acquire lock
+  generationLocks.set(cacheKey, { 
+    startTime: Date.now(), 
+    chapter, 
+    topic, 
+    subject, 
+    level 
+  });
+  
+  log('generation_lock_acquired', { cacheKey, chapterId, topicId });
+  
+  try {
+    log('educational_video_generation_start', { chapter, topic, subject, level });
 
-  // Step 1: Generate educational storyboard
-  const storyboard = await generateEducationalStoryboard(chapter, topic, subject, level);
+    // Step 1: Generate educational storyboard
+    const storyboard = await generateEducationalStoryboard(chapter, topic, subject, level);
 
-  // Step 2: Generate images for storyboard
-  const storyboardWithImages = await generateEducationalImages(storyboard);
+    // Step 2: Generate images for storyboard
+    const storyboardWithImages = await generateEducationalImages(storyboard);
 
-  // Step 3: Generate video from storyboard with images
-  const videoUrl = await generateVideoWithVertex(storyboardWithImages);
+    // Step 3: Generate video from storyboard with images
+    const videoUrl = await generateVideoWithVertex(storyboardWithImages);
 
-  log('educational_video_generation_complete', { videoUrl });
-  return videoUrl;
+    log('educational_video_generation_complete', { videoUrl });
+    
+    // Lock will be released in saveCachedVideo
+    return videoUrl;
+    
+  } catch (error) {
+    // Release lock on error
+    generationLocks.delete(cacheKey);
+    log('generation_lock_released_error', { cacheKey, error: error.message });
+    throw error;
+  }
 };
+
+// Export helper functions for controller
+exports.isGenerationInProgress = isGenerationInProgress;
+exports.waitForGeneration = waitForGeneration;

@@ -3,12 +3,16 @@
 const express = require('express');
 const {
   generateEducationalVideo,
+  checkVideoCache,
   getCachedVideos,
   deleteCachedVideo,
   clearCache,
 } = require('../controllers/storygenController');
 
 const router = express.Router();
+
+// Check cache status without generating (NEW)
+router.post('/check', checkVideoCache);
 
 // Main endpoint: Generate or retrieve cached educational video
 router.post('/generate', generateEducationalVideo);
