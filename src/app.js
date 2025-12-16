@@ -1,3 +1,5 @@
+// StoryGenApp/backend/src/app.js
+
 const express = require('express');
 console.log("Starting app.js...");
 const dotenv = require('dotenv');
@@ -20,6 +22,7 @@ const storyboardRoutes = require('../src/routes/storyboardRoutes');
 const galleryRoutes = require('../src/routes/galleryRoutes');
 const videoLogRoutes = require('../src/routes/videoLogRoutes');
 const storyboardLogRoutes = require('../src/routes/storyboardLogRoutes');
+const storygenRoutes = require('../src/routes/storygenRoutes'); // NEW
 
 const app = express();
 const port = process.env.PORT || 3005;
@@ -33,6 +36,7 @@ app.use('/api/storyboard', storyboardRoutes);
 app.use('/api/gallery', galleryRoutes);
 app.use('/api/video-logs', videoLogRoutes);
 app.use('/api/storyboard-logs', storyboardLogRoutes);
+app.use('/api/storygen', storygenRoutes); // NEW: Educational video generation with caching
 
 app.get('/', (req, res) => {
   res.send('StoryGenApp Backend is running!');
