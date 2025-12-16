@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const util = require('util');
 
-const logPath = path.join(__dirname, '../../..', 'backend.log');
+const logPath = path.join(__dirname, '../..', 'backend.log');
 
 const log = (event, payload = {}) => {
   const ts = new Date().toISOString();
