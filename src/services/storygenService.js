@@ -708,7 +708,7 @@ const generateVideoWithVertex = async (storyboardWithImages) => {
     console.warn('Failed to delete concat list file:', e);
   }
 
-  const videoUrl = `http://localhost:${process.env.PORT || 6060}/videos/${outputName}`;
+  const videoUrl = `${process.env.API_BASE_URL}/videos/${outputName}`;
   log('educational_video_complete', { videoUrl });
   
   return videoUrl;
