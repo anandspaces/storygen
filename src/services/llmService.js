@@ -69,16 +69,6 @@ const retry = async (fn, attempts = 2, delayMs = 400) => {
 
 // Read the Prompt Guide once
 let PROMPT_GUIDE_CONTENT = "";
-try {
-  const guidePath = path.join(__dirname, '../../../guide/VideoGenerationPromptGuide.md');
-  if (fs.existsSync(guidePath)) {
-    PROMPT_GUIDE_CONTENT = fs.readFileSync(guidePath, 'utf-8');
-  } else {
-    console.warn("Warning: VideoGenerationPromptGuide.md not found at", guidePath);
-  }
-} catch (e) {
-  console.warn("Failed to read VideoGenerationPromptGuide.md:", e);
-}
 
 exports.analyzeShotTransition = async (shotA, shotB) => {
   const apiKey = process.env.GEMINI_API_KEY;
