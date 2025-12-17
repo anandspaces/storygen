@@ -52,7 +52,6 @@ exports.checkVideoCache = async (req, res) => {
           topic: cacheStatus.topic,
           subject: cacheStatus.subject,
           created_at: cacheStatus.createdAt,
-          access_count: cacheStatus.accessCount,
         },
       });
     }
@@ -153,7 +152,6 @@ exports.generateEducationalVideo = async (req, res) => {
           topic: cachedVideo.topic,
           subject: cachedVideo.subject,
           created_at: cachedVideo.createdAt,
-          access_count: cachedVideo.accessCount,
         },
       });
     }
