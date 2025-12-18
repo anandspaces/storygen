@@ -489,18 +489,28 @@ const generateVideoWithVertex = async (storyboardWithImages) => {
 
   log('vertex_video_generation_start', { shots: storyboardWithImages.length });
 
-  // Generate transition videos between shots
+  // Generate video for each shot
   const videoClips = [];
 
-  for (let i = 0; i < storyboardWithImages.length - 1; i++) {
-    const shotA = storyboardWithImages[i];
-    const shotB = storyboardWithImages[i + 1];
+  // Generate one video per shot
+  for (let i = 0; i < storyboardWithImages.length; i++) {
+    const shot = storyboardWithImages[i];
+    
+    // Use the shot's prompt and description
+    const videoPrompt = `${shot.prompt}. ${shot.description}`;
+    const duration = parseInt(shot.duration, 10) || 6;
 
-    const transitionPrompt = `Educational transition from "${shotA.description}" to "${shotB.description}". ${shotB.prompt}`;
-    const duration = parseInt(shotB.duration, 10) || 6;
-
-    const firstFrame = await readImageBytes(shotA.imageUrl);
-    const lastFrame = await readImageBytes(shotB.imageUrl);
+    const firstFrame = await readImageBytes(shot.imageUrl);
+    
+    // For the last frame, use the same image or the next shot's image
+    let lastFrame;
+    if (i < storyboardWithImages.length - 1) {
+      // Use next shot's image as last frame for smooth transition
+      lastFrame = await readImageBytes(storyboardWithImages[i + 1].imageUrl);
+    } else {
+      // For the last shot, use the same image (or you could generate a variation)
+      lastFrame = firstFrame;
+    }
 
     // Start video job
     const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${modelId}:predictLongRunning`;
@@ -515,7 +525,7 @@ const generateVideoWithVertex = async (storyboardWithImages) => {
 
     const body = {
       instances: [{
-        prompt: transitionPrompt,
+        prompt: videoPrompt,
         image: firstFrame,
         lastFrame: lastFrame,
       }],
@@ -540,13 +550,13 @@ const generateVideoWithVertex = async (storyboardWithImages) => {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`Video generation failed: ${res.status} ${text}`);
+      throw new Error(`Video generation failed for shot ${i + 1}: ${res.status} ${text}`);
     }
 
     const json = await res.json();
     const operationName = json.name;
 
-    log('vertex_clip_started', { operation: operationName, shot: i + 1 });
+    log('vertex_clip_started', { operation: operationName, shot: i + 1, totalShots: storyboardWithImages.length });
 
     // Poll for completion
     const pollUrl = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${modelId}:fetchPredictOperation`;
@@ -622,7 +632,12 @@ const generateVideoWithVertex = async (storyboardWithImages) => {
             await fs.promises.writeFile(clipPath, Buffer.from(videoBase64, 'base64'));
             videoClips.push(clipPath);
             
-            log('vertex_clip_completed', { clip: fileName, shot: i + 1 });
+            log('vertex_clip_completed', { 
+              clip: fileName, 
+              shot: i + 1, 
+              totalShots: storyboardWithImages.length,
+              clipsGenerated: videoClips.length 
+            });
           } else {
             // Log full response for debugging
             console.error(`No video data found in response for clip ${i + 1}. Full response:`, JSON.stringify(pollJson, null, 2));
@@ -645,6 +660,13 @@ const generateVideoWithVertex = async (storyboardWithImages) => {
   // Check if we have clips to stitch
   if (videoClips.length === 0) {
     throw new Error('No video clips were generated successfully');
+  }
+  
+  if (videoClips.length !== storyboardWithImages.length) {
+    log('vertex_clip_mismatch', { 
+      expected: storyboardWithImages.length, 
+      generated: videoClips.length 
+    });
   }
 
   log('vertex_clips_ready_for_stitching', { count: videoClips.length });
