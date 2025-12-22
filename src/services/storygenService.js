@@ -279,7 +279,7 @@ const generateEducationalStoryboard = async (chapter, topic, subject, level) => 
     throw new Error("No valid GEMINI_API_KEY found for educational video generation.");
   }
 
-  const shotCount = 3; // Fixed 3 shots for educational content
+  const shotCount = 5; // Fixed 5 shots for educational content
   
   log('educational_storyboard_start', { 
     model: geminiTextModel, 
